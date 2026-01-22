@@ -9,39 +9,53 @@ import java.util.*;
 public class Game extends JPanel implements MouseMotionListener,MouseWheelListener{
 	public static AffineTransform DEFAULT_TRANSFORM;
 	public static final int CORES=Runtime.getRuntime().availableProcessors();
+	public static final Color highlight=new Color(0x3fffffff,true),shadow=new Color(0x54000000,true),bg=new Color(0x21ac00),on=new Color(0xa000ff00,true),off=new Color(0xa0ff0000,true);
+	public boolean checkEnabled=true,uncoverEnabled=true;
 	int mouseX=-1,mouseY=-1,tx,ty,WIDTH,HEIGHT;
 	final Map<RegLoc,Region>regions=new HashMap<>();
 	RegLoc scrLoc=new RegLoc(),scrEndLoc=new RegLoc();
-	final Rectangle resetRect=new Rectangle(5,30,100,20);
+	final Rectangle resetRect=new Rectangle(5,85,100,20);
+	Rectangle checkRect=new Rectangle(),uncoverRect=new Rectangle();
 	final String coordFormat="Region %d %d, Chunk %d %d, Tile %d %d";
 	String coords=String.format(coordFormat,0,0,0,0,0,0);
 	ExecutorService executor=Executors.newWorkStealingPool(CORES);
 	double scale=1;
 	boolean resetting;
+	Stats stats=new Stats();
 	/// covered, flag, mines
 	/// 0b 0_0_0000;
-	Game()throws Exception{
-		Runtime.getRuntime().addShutdownHook(new Thread(()->{for(Region region:regions.values())try{region.save();}catch(Exception _){}}));
+	Game()throws IOException{
+		Runtime.getRuntime().addShutdownHook(new Thread(()->{
+			for(Region region:regions.values())try{region.save();}catch(Exception _){}
+			try{stats.save();}catch(Exception _){}
+		}));
 		File dir=new File("world");
-		if(dir.exists())for(String name:dir.list()){
+		if(dir.exists())for(String name:dir.list()){try{
 			String[]coords=name.split(" |\\..*");
 			int X=Integer.parseInt(coords[0]),Y=Integer.parseInt(coords[1]);
-			Region region=new Region(X,Y,this);
-			region.load();
-			regions.put(new RegLoc(X,Y),region);
-		}
+			regions.put(new RegLoc(X,Y),new Region(X,Y,this).load());
+		}catch(Exception _){}}
 		setLayout(null);
 		addMouseListener(new MouseAdapter(){public void mouseClicked(MouseEvent e){
 			if(e.getX()>resetRect.x&&e.getX()<resetRect.x+resetRect.width&&e.getY()>resetRect.y&&e.getY()<resetRect.y+resetRect.height){
 				resetting=true;
 				executor.shutdownNow();
-				for(Region region:regions.values())if(region.exists())if(!region.delete())System.err.println("Failed to delete "+region.getName()+" during reset");
+				for(Region region:regions.values())if(region.exists()){
+					if(!region.delete())System.err.println("Failed to delete "+region.getName()+" during reset");
+					else System.out.println("Deleted "+region.getName());
+				}
 				regions.clear();
-				executor=Executors.newWorkStealingPool(CORES);
+				stats.reset();
 				scrLoc=new RegLoc();
 				scrEndLoc=scrLoc.add((WIDTH+16)>>4,(HEIGHT+16)>>4);
+				tx=0;ty=0;
+				executor=Executors.newWorkStealingPool(CORES);
 				resetting=false;
 				repaint();
+			}
+			else if(e.getX()>getWidth()-45&&e.getX()<getWidth()-5){
+				if(e.getY()>=5&&e.getY()<25)checkEnabled=!checkEnabled;
+				else if(e.getY()>=25&&e.getY()<45)uncoverEnabled=!uncoverEnabled;
 			}
 			else executor.execute(()->fill(scrLoc.add(((mouseX=(int)(e.getX()/scale))+tx)>>4,((mouseY=(int)(e.getY()/scale))+ty)>>4),e.getButton()==3));
 			repaint();
@@ -49,6 +63,8 @@ public class Game extends JPanel implements MouseMotionListener,MouseWheelListen
 		addMouseMotionListener(this);
 		addMouseWheelListener(this);
 		addComponentListener(new ComponentAdapter(){public void componentResized(ComponentEvent e){
+			checkRect=new Rectangle(getWidth()-165,5,120,20);
+			uncoverRect=new Rectangle(getWidth()-165,25,120,20);
 			WIDTH=(int)Math.ceil(getWidth()/scale);
 			HEIGHT=(int)Math.ceil(getHeight()/scale);
 			scrEndLoc=scrLoc.add((WIDTH>>4)+1,(HEIGHT>>4)+1);
@@ -66,7 +82,10 @@ public class Game extends JPanel implements MouseMotionListener,MouseWheelListen
 	public byte getTile(RegLoc loc){return getRegion(loc).getTile(loc);}
 	public static boolean areLocsEqual(RegLoc loc1,RegLoc loc2){return loc1.regX==loc2.regX&&loc1.regY==loc2.regY&&loc1.chunkX==loc2.chunkX&&loc1.chunkY==loc2.chunkY&&loc1.tileX==loc2.tileX&&loc1.tileY==loc2.tileY;}
 	public void fill(RegLoc loc,boolean flag){
-		if(getRegion(loc).getChunk(loc).locked)return;
+		if(getRegion(loc).getChunk(loc).locked){
+			if(getRegion(loc).getChunk(loc).lost)getRegion(loc).getChunk(loc).unlock(mouseX-((loc.chunkX-scrLoc.chunkX+(int)((loc.regX-scrLoc.regX)<<5))<<8)+tx+(scrLoc.tileX<<4),mouseY-((loc.chunkY-scrLoc.chunkY+(int)((loc.regY-scrLoc.regY)<<5))<<8)+ty+(scrLoc.tileY<<4));
+			return;
+		}
 		ArrayList<RegLoc>locations=new ArrayList<>();
 		locations.add(loc);
 		while(!locations.isEmpty()&&!resetting){
@@ -77,7 +96,6 @@ public class Game extends JPanel implements MouseMotionListener,MouseWheelListen
 			};
 			if(resetting)break;
 			for(RegLoc tmpLoc1:getRegion(tmp).getChunk(tmp).fill(tmp,flag)){
-				if(resetting)break;
 				if((getRegion(tmpLoc1).getTile(tmpLoc1)&48)==16)continue;
 				boolean add=true;
 				for(RegLoc tmpLoc2:locations){
@@ -87,6 +105,7 @@ public class Game extends JPanel implements MouseMotionListener,MouseWheelListen
 						break;
 					}
 				}
+				if(resetting)break;
 				if(add)locations.add(tmpLoc1);
 			}
 			flag=false;
@@ -95,7 +114,6 @@ public class Game extends JPanel implements MouseMotionListener,MouseWheelListen
 		}
 		System.gc();
 	}
-	private final Color highlight=new Color(0x3fffffff,true),shadow=new Color(0x54000000,true),bg=new Color(0x21ac00);
 	public void paint(Graphics gr){
 		Graphics2D g=(Graphics2D)gr;
 		if(DEFAULT_TRANSFORM==null)DEFAULT_TRANSFORM=g.getTransform();
@@ -104,9 +122,31 @@ public class Game extends JPanel implements MouseMotionListener,MouseWheelListen
 		g.scale(scale,scale);
 		g.fillRect(mouseX-(mouseX+tx)%16,mouseY-(mouseY+ty)%16,16,16);
 		g.setTransform(DEFAULT_TRANSFORM);
-		drawStringWithShadow(g,coords,5,5,0,0,Color.lightGray,shadow);
+		drawStringWithShadow(g,coords,5,5,0,20,Color.lightGray,shadow);
+		g.setColor(shadow);
+		g.fillRect(5,25,15,60);
+		g.drawImage(Main.ss16img.get(12),7,27,16,16,null);
+		g.drawImage(Main.ss16img.get(10),7,47,16,16,null);
+		g.drawImage(Main.ss16img.get(9),7,67,16,16,null);
+		drawStringWithShadow(g,": "+Stats.flags,20,25,0,20,Color.lightGray,shadow);
+		drawStringWithShadow(g,": "+Stats.cleared,20,45,0,20,Color.lightGray,shadow);
+		drawStringWithShadow(g,": "+Stats.lost,20,65,0,20,Color.lightGray,shadow);
+		g.setColor(shadow);
+		g.fill(resetRect);
 		drawStringWithShadow(g,"Reset",resetRect,Color.LIGHT_GRAY,shadow);
+		drawStringWithShadow(g,"Enable visual Check",checkRect,Color.LIGHT_GRAY,shadow);
+		drawSwitch(g,getWidth()-45,5,checkEnabled);
+		drawStringWithShadow(g,"Enable Auto Uncover",uncoverRect,Color.LIGHT_GRAY,shadow);
+		drawSwitch(g,getWidth()-45,25,uncoverEnabled);
 		g.dispose();
+	}
+	public void drawSwitch(Graphics2D g,int x,int y,boolean val){
+		g.setColor(shadow);
+		g.fillRect(x,y,40,20);
+		y+=3;
+		g.fillRect(x+(val?3:20),y,17,14);
+		g.setColor(val?on:off);
+		g.fillRect(x+(val?20:3),y,17,14);
 	}
 	public void render(Graphics2D g){
 		g.scale(scale,scale);

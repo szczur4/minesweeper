@@ -48,14 +48,14 @@ public class Region extends File{
 		return chunks[loc.chunkX][loc.chunkY];
 	}
 	private void recalcHoriz(Chunk T,Chunk B){
-		if((B.checkedEdges&8)==0)for(int X=0;X<16;X++)if((T.tiles[X][15]&15)==9)for(int x=-1;x<2;x++)try{if((B.tiles[X+x][0]&15)!=9)B.tiles[X+x][0]++;}catch(Exception ignored){}
-		if((T.checkedEdges&2)==0)for(int X=0;X<16;X++)if((B.tiles[X][0]&15)==9)for(int x=-1;x<2;x++)try{if((T.tiles[X+x][15]&15)!=9)T.tiles[X+x][15]++;}catch(Exception ignored){}
+		if((B.checkedEdges&8)==0)for(int X=0;X<16;X++)if((T.tiles[X][15]&15)==9)for(int x=-1;x<2;x++)try{if((B.tiles[X+x][0]&15)!=9)B.tiles[X+x][0]++;}catch(Exception _){}
+		if((T.checkedEdges&2)==0)for(int X=0;X<16;X++)if((B.tiles[X][0]&15)==9)for(int x=-1;x<2;x++)try{if((T.tiles[X+x][15]&15)!=9)T.tiles[X+x][15]++;}catch(Exception _){}
 		T.checkedEdges|=2;
 		B.checkedEdges|=8;
 	}
 	private void recalcVert(Chunk L,Chunk R){
-		if((R.checkedEdges&1)==0)for(int Y=0;Y<16;Y++)if((L.tiles[15][Y]&15)==9)for(int y=-1;y<2;y++)try{if((R.tiles[0][Y+y]&15)!=9)R.tiles[0][Y+y]++;}catch(Exception ignored){}
-		if((L.checkedEdges&4)==0)for(int Y=0;Y<16;Y++)if((R.tiles[0][Y]&15)==9)for(int y=-1;y<2;y++)try{if((L.tiles[15][Y+y]&15)!=9)L.tiles[15][Y+y]++;}catch(Exception ignored){}
+		if((R.checkedEdges&1)==0)for(int Y=0;Y<16;Y++)if((L.tiles[15][Y]&15)==9)for(int y=-1;y<2;y++)try{if((R.tiles[0][Y+y]&15)!=9)R.tiles[0][Y+y]++;}catch(Exception _){}
+		if((L.checkedEdges&4)==0)for(int Y=0;Y<16;Y++)if((R.tiles[0][Y]&15)==9)for(int y=-1;y<2;y++)try{if((L.tiles[15][Y+y]&15)!=9)L.tiles[15][Y+y]++;}catch(Exception _){}
 		L.checkedEdges|=4;
 		R.checkedEdges|=1;
 	}
@@ -71,7 +71,7 @@ public class Region extends File{
 		NE.checkedEdges|=64;
 		SW.checkedEdges|=16;
 	}
-	public void load()throws IOException{
+	public Region load()throws IOException{
 		if(!exists())throw new IOException("The requested file does not exist");
 		InputStreamReader isr=new InputStreamReader(new GZIPInputStream(new FileInputStream(this)));
 		JsonObject root=new Gson().fromJson(isr,JsonObject.class);
@@ -81,10 +81,10 @@ public class Region extends File{
 			JsonObject column=root.getAsJsonObject(X+"");
 			for(int Y=0;Y<32;Y++)if(column.has(Y+""))chunks[X][Y]=new Chunk(X,Y,this).load(column.getAsJsonObject(Y+""));
 		}
+		return this;
 	}
 	public void save()throws IOException{
 		if(!getParentFile().exists()&&!getParentFile().mkdirs())throw new IOException("Couldn't create world directory");
-		if(!exists()&&!createNewFile())throw new IOException("Couldn't create file");
 		JsonWriter jw=new JsonWriter(new OutputStreamWriter(new GZIPOutputStream(new FileOutputStream(this))));
 		jw.beginObject().setFormattingStyle(style);
 		for(int X=0;X<32;X++){
